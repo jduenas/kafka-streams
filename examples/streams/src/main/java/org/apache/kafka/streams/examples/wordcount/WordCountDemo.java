@@ -19,11 +19,15 @@ package org.apache.kafka.streams.examples.wordcount;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
+import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.KTable;
+import org.apache.kafka.streams.kstream.Named;
 import org.apache.kafka.streams.kstream.Produced;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -48,6 +52,7 @@ public final class WordCountDemo {
 
     public static final String INPUT_TOPIC = "streams-plaintext-input";
     public static final String OUTPUT_TOPIC = "streams-wordcount-output";
+    private final static Logger logger = LoggerFactory.getLogger(WordCountDemo.class);
 
     static Properties getStreamsConfig(final String[] args) throws IOException {
         final Properties props = new Properties();
@@ -77,11 +82,28 @@ public final class WordCountDemo {
 
         final KTable<String, Long> counts = source
             .flatMapValues(value -> Arrays.asList(value.toLowerCase(Locale.getDefault()).split("\\W+")))
+            .peek((s, s2) -> logger.info("{} : {}", s, s2))
             .groupBy((key, value) -> value)
-            .count();
+            .count(Named.as("WordCount"));
 
         // need to override value serde to Long type
         counts.toStream().to(OUTPUT_TOPIC, Produced.with(Serdes.String(), Serdes.Long()));
+    }
+
+    static void createColorStream(final StreamsBuilder builder) {
+        final KStream<String, String> source = builder.stream("streams-color-input");
+
+        KTable<String, String> personToColor = source.filter((x, y) -> y.contains(",")).map((key, value) -> {
+            logger.info("Raw Color: {}:{}", key, value);
+            String[] keyValue = value.split(",");
+            return KeyValue.pair(keyValue[0], keyValue[1]);
+        }).peek((key, value) -> logger.info("Colors: {}:{}", key, value)).toTable();
+
+        KTable<String, Long> count = personToColor.toStream()
+                .map((key, value) -> KeyValue.pair(value, value))
+                .groupBy((key, value) -> value)
+                .count();
+        count.toStream().to("streams-color-output", Produced.with(Serdes.String(), Serdes.Long()));
     }
 
     public static void main(final String[] args) throws IOException {
@@ -89,6 +111,7 @@ public final class WordCountDemo {
 
         final StreamsBuilder builder = new StreamsBuilder();
         createWordCountStream(builder);
+        // createColorStream(builder);
         final KafkaStreams streams = new KafkaStreams(builder.build(), props);
         final CountDownLatch latch = new CountDownLatch(1);
 
@@ -102,7 +125,9 @@ public final class WordCountDemo {
         });
 
         try {
+            streams.cleanUp();
             streams.start();
+            logger.info("Topology: {}", streams);
             latch.await();
         } catch (final Throwable e) {
             System.exit(1);
