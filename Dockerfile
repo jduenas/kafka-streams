@@ -1,3 +1,3 @@
-FROM confluentinc/cp-zookeeper:latest
-WORKDIR /usr/kafka
+FROM bitnami/kafka:latest
+WORKDIR /usr/app
 COPY . .
