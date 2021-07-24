@@ -1,4 +1,4 @@
-version: '2'
+version: "2"
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:latest
@@ -7,13 +7,27 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - 22181:2181
-  
+
   kafka:
-    image: confluentinc/cp-kafka:latest
+    image: my-kafka
     depends_on:
       - zookeeper
+    container_name: kafka
     ports:
       - 29092:29092
+    entrypoint:
+      - "sh"
+      - "-c"
+      - "echo -n \"Wait until Zookeeper is fully initiliazed...\"; \
+        ping -c 1 -w 5 zookeeper > /dev/null 2>&1; \
+        while [ \"$$(echo ruok | nc zookeeper 2181)\" != \"imok\" ]; do \
+        echo -n \"...\"; \
+        sleep 1; \
+        done; \
+        echo \"...done\"; \
+        /etc/confluent/docker/run"
+    volumes:
+      - ".:/usr/kafka"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
